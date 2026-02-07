@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ลิ้งค์ไก่Blood</title>
+  <title>blood strike</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -102,79 +102,52 @@
       padding: 60px 0;
       font-style: italic;
     }
-    .loading {
-      text-align: center;
-      color: #3498db;
-      padding: 60px 0;
-      font-style: italic;
-    }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>ลิ้งค์ไก่Blood (ทุกคนเห็นเหมือนกัน)</h1>
+  <h1>ลิ้งค์ไก่Blood</h1>
   
   <div class="input-area">
     <input type="text" id="input" placeholder="วางลิงก์ หรือข้อความที่มีลิงก์..." autocomplete="off"/>
     <button id="add">เพิ่ม</button>
   </div>
 
-  <div class="list" id="list"><div class="loading">กำลังเชื่อมต่อ Supabase...</div></div>
+  <div class="list" id="list"></div>
 </div>
 
-<script type="module">
-  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // กำหนด Supabase URL และ Anon Key จากโครงการของคุณใน Supabase
+  const SUPABASE_URL = 'https://ahjursbcsmeweipdcprs.supabase.co'; // แทนที่ด้วย URL ของคุณ
+  const SUPABASE_ANON_KEY = 'sb_publishable_bBsXcN6JnlguKwHKa7HG5Q_TkApPhm5'; // แทนที่ด้วย Anon Key ของคุณ
 
-  const SUPABASE_URL = 'https://mkcjpgwlftinvhibyedo.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_sK-FZOtegGggqDXvrv_olQ_K690yvKf';
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const list = document.getElementById('list');
   const input = document.getElementById('input');
   const addBtn = document.getElementById('add');
 
-  let items = [];
+  let items = []; // เก็บข้อมูลในหน่วยความจำเพื่อ render
 
-  async function loadItems() {
-    try {
-      const { data, error } = await supabase
-        .from('blood_links')
-        .select('id, text')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    } catch (err) {
-      console.error('Load error:', err);
-      list.innerHTML = '<div class="empty">เชื่อมต่อ Supabase ล้มเหลว: ' + err.message + '</div>';
-      return [];
+  // ฟังก์ชันดึงข้อมูลจาก Supabase และ sort โดย created_at DESC (ใหม่สุดก่อน)
+  async function fetchItems() {
+    const { data, error } = await supabase
+      .from('links') // ชื่อ table ใน Supabase (สร้าง table ชื่อ 'links' ด้วย columns: id (uuid), text (text), created_at (timestamptz))
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching items:', error);
+      return;
     }
-  }
 
-  async function insertLink(text) {
-    try {
-      const { error } = await supabase.from('blood_links').insert({ text });
-      if (error) throw error;
-    } catch (err) {
-      alert('เพิ่มลิงก์ไม่ได้: ' + err.message);
-    }
-  }
-
-  async function deleteLink(id) {
-    try {
-      const { error } = await supabase.from('blood_links').delete().eq('id', id);
-      if (error) throw error;
-    } catch (err) {
-      console.error('Delete error:', err);
-    }
-  }
-
-  async function loadAndRender() {
-    items = await loadItems();
+    items = data || [];
     render();
   }
 
+  // ฟังก์ชัน render list
   function render() {
     list.innerHTML = '';
     if (items.length === 0) {
@@ -185,8 +158,7 @@
     items.forEach((item, index) => {
       const div = document.createElement('div');
       div.className = 'item';
-      div.dataset.id = item.id;
-      div.dataset.text = item.text;
+      if (item.copied) div.classList.add('copied'); // แต่จริงๆ ไม่มี field copied เพราะลบเลย
 
       const number = document.createElement('span');
       number.className = 'number';
@@ -204,37 +176,70 @@
       div.appendChild(textSpan);
       div.appendChild(status);
 
-      div.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(item.text);
+      // Single click → คัดลอก + ลบจาก Supabase หลังแสดงสถานะ
+      div.addEventListener('click', async (e) => {
+        if (e.detail === 2) return;
+
+        navigator.clipboard.writeText(item.text).then(async () => {
           div.classList.add('copied');
+          
           setTimeout(async () => {
-            await deleteLink(item.id);
-            await loadAndRender();
+            const { error } = await supabase
+              .from('links')
+              .delete()
+              .eq('id', item.id);
+
+            if (error) {
+              console.error('Error deleting item:', error);
+            }
+            // ไม่ต้อง splice ที่นี่เพราะ realtime จะ update
           }, 800);
-        } catch (err) {
+        }).catch(err => {
+          console.error('คัดลอกไม่ได้:', err);
           alert('คัดลอกไม่ได้ กรุณาลองใหม่');
-        }
+        });
       });
 
       list.appendChild(div);
     });
   }
 
+  // ฟังก์ชันเพิ่ม item
   async function addItem() {
-    const val = input.value.trim();
+    let val = input.value.trim();
     if (!val) return;
 
-    const matches = val.match(/(https?:\/\/[^\s]+)/gi);
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const matches = val.match(urlRegex);
+
     if (!matches || matches.length === 0) {
-      alert('ไม่พบลิงก์ในข้อความ กรุณาวางลิงก์จริง');
+      alert('ไม่พบลิงก์ในข้อความ กรุณาวางข้อความที่มีลิงก์');
       return;
     }
 
-    await insertLink(matches[0]);
+    const linkToSave = matches[0];
+
+    const { error } = await supabase
+      .from('links')
+      .insert([{ text: linkToSave }]);
+
+    if (error) {
+      console.error('Error adding item:', error);
+      return;
+    }
+
     input.value = '';
-    await loadAndRender();
+    // ไม่ต้อง unshift ที่นี่เพราะ realtime จะ update
   }
+
+  // ตั้งค่า realtime subscription
+  supabase
+    .channel('links-channel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'links' }, (payload) => {
+      console.log('Realtime change:', payload);
+      fetchItems(); // re-fetch และ render เมื่อมีการเปลี่ยนแปลง
+    })
+    .subscribe();
 
   addBtn.addEventListener('click', addItem);
   input.addEventListener('keypress', e => {
@@ -242,7 +247,7 @@
   });
 
   // โหลดครั้งแรก
-  loadAndRender();
+  fetchItems();
 </script>
 
 </body>
